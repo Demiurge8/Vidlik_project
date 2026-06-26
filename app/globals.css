@@ -1,0 +1,169 @@
+@import 'tailwindcss';
+
+/* твої глобальні стилі далі */
+
+::selection {
+  background: #98ff22;
+  color: #000;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* fallback padding for anchor jumps */
+  scroll-padding-top: var(--nav-offset, 200px);
+}
+
+:root {
+  /* default offset for sticky navbar; overwritten in Navbar when mounted */
+  --nav-offset: 240px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    /* mobile navbar + blur bar; will be overwritten dynamically */
+    --nav-offset: 260px;
+  }
+}
+
+/* Apply anchor offset broadly so будь-який елемент з id має відступ */
+:is(section, div, article, header, main, footer, h1, h2, h3, h4, h5, h6)[id] {
+  /* add extra 32px buffer above measured navbar height */
+  scroll-margin-top: calc(var(--nav-offset, 200px) + 32px);
+}
+
+[data-scroll-anchor="true"] {
+  scroll-margin-top: var(--nav-offset);
+}
+
+html,
+body {
+  background: #0a0a0a;
+}
+
+.leaflet-interactive:focus,
+.leaflet-marker-icon:focus,
+.leaflet-marker-icon:focus-visible,
+.leaflet-marker-icon:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Базовий тултип */
+.city-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Внутрішній контейнер */
+.tooltip-inner {
+  background: rgba(0, 0, 0, 0.9);
+  border-radius: 10px;
+  border: 1px solid rgba(152, 255, 34, 0.3);
+  padding: 8px 10px;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 260px;
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.7);
+}
+
+/* Компактний тултип (лише назва + кількість) */
+.tooltip-inner--compact {
+  padding: 6px 8px;
+}
+
+/* Великий тултип */
+.tooltip-inner--full {
+  box-shadow: 0 0 20px rgba(152, 255, 34, 0.4);
+}
+
+/* Заголовок */
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tooltip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #98ff22;
+  box-shadow: 0 0 10px rgba(152, 255, 34, 0.8);
+}
+
+.tooltip-title {
+  font-weight: 700;
+  color: #98ff22;
+  margin-bottom: 1px;
+}
+
+.tooltip-sub {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+/* Список подій */
+.tooltip-list {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 0;
+}
+
+.tooltip-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.tooltip-pill-date {
+  min-width: 44px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(152, 255, 34, 0.16);
+  border: 1px solid rgba(152, 255, 34, 0.5);
+  text-align: center;
+  font-weight: 600;
+}
+
+.tooltip-pill-title {
+  opacity: 0.9;
+}
+
+/* Лінк всередині тултипу */
+.tooltip-link {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #98ff22;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.map-brightness {
+  filter: brightness(3) contrast(1.1);
+}
+
+/* Hide scrollbars when needed */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Disable label click focus for custom forms */
+.no-label-pointer label {
+  pointer-events: none;
+}
+.no-label-pointer input,
+.no-label-pointer textarea,
+.no-label-pointer button,
+.no-label-pointer select {
+  pointer-events: auto;
+}

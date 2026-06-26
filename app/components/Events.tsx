@@ -1,0 +1,1645 @@
+﻿"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  ArrowRight,
+  Archive,
+  Calendar,
+  Clock,
+  MapPin,
+  Tag,
+  Users,
+  X,
+  Pencil,
+  Plus,
+  Trash2,
+  ShieldCheck,
+} from "lucide-react";
+import { RevealSection } from "./RevealSection";
+import { useSession } from "../lib/session";
+
+type EventItem = {
+  id: number;
+  title: string;
+  startsAt: string;
+  endsAt?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: string | null;
+  country?: string | null;
+  venue?: string | null;
+  address?: string | null;
+  timezone: string;
+  category?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  tags: string[];
+  capacity?: number | null;
+  spotsLeft?: number | null;
+  host?: string | null;
+  registrationUrl?: string | null;
+  isActive: boolean;
+};
+
+type RSVPFormState = {
+  name: string;
+  email: string;
+  comment: string;
+  honeypot: string;
+};
+
+type AdminFormState = {
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  city: string;
+  country: string;
+  venue: string;
+  address: string;
+  timezone: string;
+  category: string;
+  summary: string;
+  description: string;
+  tags: string;
+  capacity: string;
+  spotsLeft: string;
+  host: string;
+  registrationUrl: string;
+  isActive: boolean;
+};
+
+const emptyFormState = (): RSVPFormState => ({
+  name: "",
+  email: "",
+  comment: "",
+  honeypot: "",
+});
+
+const emptyAdminForm = (): AdminFormState => ({
+  title: "",
+  startsAt: "",
+  endsAt: "",
+  city: "",
+  country: "Denmark",
+  venue: "",
+  address: "",
+  timezone: "Europe/Copenhagen",
+  category: "",
+  summary: "",
+  description: "",
+  tags: "",
+  capacity: "",
+  spotsLeft: "",
+  host: "",
+  registrationUrl: "",
+  isActive: true,
+});
+
+const formatShortDate = (isoDate: string, timeZone?: string) =>
+  new Intl.DateTimeFormat("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: timeZone || "UTC",
+  }).format(new Date(isoDate));
+
+const formatDateWithTime = (isoDate: string, timeZone: string) =>
+  new Intl.DateTimeFormat("uk-UA", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(isoDate));
+
+const formatTime = (isoDate: string, timeZone: string) =>
+  new Intl.DateTimeFormat("uk-UA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(isoDate));
+
+const toInputDateTime = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+};
+
+const splitCategories = (value?: string | null) =>
+  value
+    ? value
+        .split(/[,/]/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+    : [];
+
+const CITY_OPTIONS = [
+  "Copenhagen",
+  "Aarhus",
+  "Odense",
+  "Aalborg",
+  "Esbjerg",
+  "Randers",
+  "Kolding",
+  "Horsens",
+  "Vejle",
+  "Roskilde",
+  "Herning",
+  "Silkeborg",
+  "Helsingør",
+  "Næstved",
+  "Frederiksberg",
+  "Fredericia",
+  "Viborg",
+];
+
+const CATEGORY_OPTIONS = [
+  "Meetup",
+  "Talk",
+  "Workshop",
+  "Networking",
+  "Party",
+  "Music",
+  "Volunteering",
+  "Cinema",
+  "Games",
+];
+
+const TAG_OPTIONS = [
+  "Музика",
+  "Нетворкінг",
+  "Настолки",
+  "Технології",
+  "Освіта",
+  "Кіно",
+  "Волонтерство",
+  "Спорт",
+  "Діти",
+  "Культура",
+];
+
+
+export function Events() {
+  const { session } = useSession();
+  const isAdmin = session?.role === "admin";
+  const ARCHIVE_PAGE_SIZE = 6;
+
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [pastEvents, setPastEvents] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [pastPage, setPastPage] = useState(1);
+  const [pastTotalPages, setPastTotalPages] = useState(1);
+  const [pastLoading, setPastLoading] = useState(false);
+  const [pastError, setPastError] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formState, setFormState] = useState<RSVPFormState>(emptyFormState);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
+
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [adminEditing, setAdminEditing] = useState<EventItem | null>(null);
+  const [adminForm, setAdminForm] = useState<AdminFormState>(emptyAdminForm);
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const startRef = useRef<HTMLInputElement | null>(null);
+  const endRef = useRef<HTMLInputElement | null>(null);
+  const cityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const categoryDropdownRef = useRef<HTMLDivElement | null>(null);
+  const tagDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [cityQuery, setCityQuery] = useState("");
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [categoriesSelected, setCategoriesSelected] = useState<string[]>([]);
+  const [tagsSelected, setTagsSelected] = useState<string[]>([]);
+
+  const fetchPastEvents = useCallback(
+    async (page: number) => {
+      setPastLoading(true);
+      setPastError(null);
+      try {
+        const params = new URLSearchParams({
+          scope: "past",
+          page: String(page),
+          limit: String(ARCHIVE_PAGE_SIZE),
+        });
+        const response = await fetch(`/api/events?${params.toString()}`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("?? ??????? ??????????? ????? ?????");
+        }
+        const data = (await response.json()) as {
+          events: EventItem[];
+          meta?: { page?: number; totalPages?: number };
+        };
+        setPastEvents(
+          data.events.map((item) => ({
+            ...item,
+            tags: item.tags || [],
+          }))
+        );
+        setPastPage(data.meta?.page ?? page);
+        setPastTotalPages(data.meta?.totalPages ?? 1);
+      } catch (err) {
+        setPastError(
+          err instanceof Error
+            ? err.message
+            : "??????? ??????? ???????????? ??????"
+        );
+      } finally {
+        setPastLoading(false);
+      }
+    },
+    [ARCHIVE_PAGE_SIZE]
+  );
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    setListError(null);
+    try {
+      const response = await fetch("/api/events?scope=upcoming", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("?? ??????? ??????????? ?????");
+      }
+      const data = (await response.json()) as { events: EventItem[] };
+      setEvents(
+        data.events.map((item) => ({
+          ...item,
+          tags: item.tags || [],
+        }))
+      );
+    } catch (err) {
+      setListError(
+        err instanceof Error ? err.message : "??????? ??????? ???????????? ?????"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        cityDropdownRef.current &&
+        !cityDropdownRef.current.contains(target)
+      ) {
+        setCityDropdownOpen(false);
+      }
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(target)
+      ) {
+        setCategoryDropdownOpen(false);
+      }
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(target)) {
+        setTagDropdownOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCityDropdownOpen(false);
+        setCategoryDropdownOpen(false);
+        setTagDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  const resetForm = () => {
+    setIsFormOpen(false);
+    setFormState(emptyFormState());
+    setSubmitting(false);
+    setSubmitted(false);
+    setSubmissionMessage(null);
+    setRsvpError(null);
+  };
+
+  const closeModal = () => {
+    resetForm();
+    setSelectedEvent(null);
+  };
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const originalOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeModal();
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!archiveOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setArchiveOpen(false);
+      }
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [archiveOpen]);
+
+  useEffect(() => {
+    if (!adminModalOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAdminModalOpen(false);
+        setAdminEditing(null);
+      }
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [adminModalOpen]);
+
+  const handleSelect = (event: EventItem) => {
+    resetForm();
+    setArchiveOpen(false);
+    setSelectedEvent(event);
+  };
+
+  const openArchive = () => {
+    setArchiveOpen(true);
+    setPastPage(1);
+    fetchPastEvents(1);
+  };
+
+  const closeArchive = () => {
+    setArchiveOpen(false);
+  };
+
+  const openRsvp = () => {
+    setIsFormOpen(true);
+    if (session) {
+      setFormState((prev) => ({
+        ...prev,
+        name: prev.name || session.name || "",
+        email: prev.email || session.email,
+      }));
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedEvent) {
+      setRsvpError("Подію не знайдено.");
+      return;
+    }
+    if (isEventPast(selectedEvent)) {
+      setRsvpError("Подія вже минула.");
+      return;
+    }
+    if (formState.honeypot) {
+      setRsvpError("Перевірте форму та спробуйте ще раз.");
+      return;
+    }
+    if (!formState.name.trim() || !formState.email.includes("@")) {
+      setRsvpError("Вкажіть ім'я та коректний email.");
+      return;
+    }
+
+    setRsvpError(null);
+    setSubmissionMessage(null);
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/event-registrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: selectedEvent.id,
+          name: formState.name.trim().slice(0, 80),
+          email: formState.email.trim(),
+          contact: formState.comment.trim(),
+          honeypot: formState.honeypot,
+        }),
+      });
+
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        status?: string;
+      };
+
+      if (!response.ok) {
+        setRsvpError(body.error || "Не вдалося записатися.");
+        return;
+      }
+
+      setSubmissionMessage(
+        body.message ||
+          (body.status === "PENDING"
+            ? "Запис отримано. Перевірте email для підтвердження."
+            : "Ви записані.")
+      );
+      setSubmitted(true);
+      setTimeout(() => {
+        closeModal();
+      }, 1400);
+    } catch (err) {
+      setRsvpError("Не вдалося надіслати форму. Спробуйте ще раз.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openAdminCreate = () => {
+    setAdminEditing(null);
+    setAdminForm(emptyAdminForm());
+    setAdminError(null);
+    setAdminModalOpen(true);
+    setCityQuery("");
+    setCategoriesSelected([]);
+    setTagsSelected([]);
+  };
+
+  const openAdminEdit = (item: EventItem) => {
+    setAdminEditing(item);
+    setAdminForm({
+      title: item.title,
+      startsAt: toInputDateTime(item.startsAt),
+      endsAt: toInputDateTime(item.endsAt ?? undefined),
+      city: item.city ?? "",
+      country: item.country || "Denmark",
+      venue: item.venue ?? "",
+      address: item.address ?? "",
+      timezone: item.timezone || "UTC",
+      category: item.category ?? "",
+      summary: item.summary ?? "",
+      description: item.description ?? "",
+      tags: (item.tags || []).join(", "),
+      capacity: item.capacity?.toString() ?? "",
+      spotsLeft: item.spotsLeft?.toString() ?? "",
+      host: item.host ?? "",
+      registrationUrl: item.registrationUrl ?? "",
+      isActive: item.isActive,
+    });
+    setAdminError(null);
+    setAdminModalOpen(true);
+    setCityQuery("");
+    setCategoriesSelected(splitCategories(item.category));
+    setTagsSelected(item.tags || []);
+  };
+
+  const openPicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+    if (!ref.current) return;
+    if (typeof ref.current.showPicker === "function") {
+      ref.current.showPicker();
+    } else {
+      ref.current.focus();
+      ref.current.click();
+    }
+  };
+
+  const handleAdminSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAdminError(null);
+    setAdminSaving(true);
+
+    try {
+      const title = adminForm.title.trim();
+      const startsAt = adminForm.startsAt
+        ? new Date(adminForm.startsAt).toISOString()
+        : "";
+      if (!title || !startsAt) {
+        setAdminError("Заповніть назву та дату початку.");
+        setAdminSaving(false);
+        return;
+      }
+      if (
+        adminForm.endsAt &&
+        new Date(adminForm.endsAt).getTime() < new Date(adminForm.startsAt).getTime()
+      ) {
+        setAdminError("Закінчення не може бути раніше початку.");
+        setAdminSaving(false);
+        return;
+      }
+
+      const payload = {
+        title,
+        startsAt,
+        endsAt: adminForm.endsAt
+          ? new Date(adminForm.endsAt).toISOString()
+          : null,
+        city: adminForm.city.trim() || null,
+        country: adminForm.country.trim() || null,
+        venue: adminForm.venue.trim() || null,
+        address: adminForm.address.trim() || null,
+        timezone: adminForm.timezone.trim() || "UTC",
+        category:
+          categoriesSelected.length > 0
+            ? categoriesSelected.join(" / ")
+            : adminForm.category.trim() || null,
+        summary: adminForm.summary.trim() || null,
+        description: adminForm.description.trim() || null,
+        tags:
+          tagsSelected.length > 0
+            ? tagsSelected
+            : adminForm.tags
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+        capacity: adminForm.capacity ? Number(adminForm.capacity) : null,
+        spotsLeft: adminForm.spotsLeft ? Number(adminForm.spotsLeft) : null,
+        host: adminForm.host.trim() || null,
+        registrationUrl: adminForm.registrationUrl.trim() || null,
+        isActive: adminForm.isActive,
+      };
+
+      const isEdit = Boolean(adminEditing);
+      const url = isEdit ? `/api/events/${adminEditing?.id}` : "/api/events";
+      const method = isEdit ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(body.error || "Не вдалося зберегти подію.");
+      }
+
+      await fetchEvents();
+      setAdminModalOpen(false);
+      setAdminEditing(null);
+      setAdminForm(emptyAdminForm());
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : "Сталася помилка збереження."
+      );
+    } finally {
+      setAdminSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Видалити цю подію? (буде вимкнена)")) return;
+    try {
+      const response = await fetch(`/api/events/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(body.error || "Не вдалося видалити подію.");
+      }
+      await fetchEvents();
+    } catch (err) {
+      setAdminError(
+        err instanceof Error ? err.message : "Сталася помилка видалення."
+      );
+    }
+  };
+
+  const getEventEndTime = (event: EventItem) =>
+    event.endsAt
+      ? new Date(event.endsAt).getTime()
+      : new Date(event.startsAt).getTime();
+
+  const isEventPast = (event: EventItem) => getEventEndTime(event) < Date.now();
+  const upcomingEvents = events;
+
+  const renderEventCard = (event: EventItem, isPast = false) => (
+    <article
+      key={event.id}
+      className={`group rounded-2xl border border-white/10 bg-[#0f1012] p-5 ${
+        isPast ? "opacity-80" : ""
+      }`}
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-white/70">
+        {event.city ? (
+          <span className="rounded-md bg-white/10 px-2 py-1">{event.city}</span>
+        ) : null}
+        <span className="rounded-md bg-white/10 px-2 py-1">
+          {formatShortDate(event.startsAt, event.timezone)}
+        </span>
+        {splitCategories(event.category).map((cat) => (
+          <span
+            key={cat}
+            className="rounded-md border border-[#98ff22]/40 bg-[#98ff22]/10 px-2 py-1 text-[#98ff22]"
+          >
+            {cat}
+          </span>
+        ))}
+        {isPast ? (
+          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wide text-white/60">
+            Минуле
+          </span>
+        ) : null}
+      </div>
+      <h3 className="text-lg font-semibold">{event.title}</h3>
+      {event.summary ? (
+        <p className="mt-1 text-white/70">{event.summary}</p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => handleSelect(event)}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90 transition hover:border-[#98ff22]/60 hover:text-white"
+        >
+          Деталі
+          <ArrowRight className="h-4 w-4" />
+        </button>
+        {isAdmin ? (
+          <>
+            <button
+              type="button"
+              onClick={() => openAdminEdit(event)}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/80 transition hover:border-white/30"
+            >
+              <Pencil className="h-4 w-4" />
+              Редагувати
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDelete(event.id)}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200 transition hover:border-red-400/50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Видалити
+            </button>
+          </>
+        ) : null}
+      </div>
+    </article>
+  );
+
+  useEffect(() => {
+    if (!isFormOpen || !session) return;
+    setFormState((prev) => ({
+      ...prev,
+      name: prev.name || session.name || "",
+      email: prev.email || session.email,
+    }));
+  }, [isFormOpen, session]);
+
+  if (!mounted) return null;
+
+  return (
+    <RevealSection
+      id="events"
+      className="scroll-mt-24 mx-auto max-w-7xl px-4 pb-20"
+      aria-labelledby="events-title"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 id="events-title" className="text-3xl font-bold tracking-tight">
+            Ближчі події
+          </h2>
+        </div>
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={openAdminCreate}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-[#98ff22] bg-[#98ff22] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_16px_#98ff22]"
+          >
+            <Plus className="h-4 w-4" />
+            Створити подію
+          </button>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="h-36 animate-pulse rounded-2xl border border-white/10 bg-white/5"
+              />
+            ))}
+          </div>
+        </div>
+      ) : listError ? (
+        <div className="rounded-3xl border border-red-400/30 bg-red-400/10 p-4 text-red-100">
+          {listError}
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 md:p-10">
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xl font-semibold">Майбутні події</h3>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={openArchive}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-[#98ff22] bg-[#98ff22] px-4 py-2 text-sm font-semibold text-black shadow-[0_0_16px_#98ff22] transition hover:shadow-[0_0_24px_#98ff22]"
+                >
+                  <Archive className="h-4 w-4" />
+                  Архів
+                </button>
+              </div>
+            </div>
+            {upcomingEvents.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {upcomingEvents.map((event) => renderEventCard(event))}
+              </div>
+            ) : (
+              <p className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white/70">
+                Немає активних подій. {isAdmin ? "Додайте першу подію." : ""}
+              </p>
+            )}
+          </section>
+        </div>
+      )}
+      {archiveOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="archive-title"
+          className="fixed inset-0 z-3000 flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeArchive();
+            }
+          }}
+        >
+          <div className="relative w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#0b0c0f] p-8 shadow-2xl scrollbar-hide md:p-10">
+            <button
+              type="button"
+              onClick={closeArchive}
+              aria-label="Закрити архів подій"
+              className="absolute right-4 top-4 rounded-full cursor-pointer border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/30 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h3 id="archive-title" className="text-2xl font-semibold">
+                  Архів подій
+                </h3>
+                <p className="text-sm text-white/60">
+                  Тут зібрані минулі події.
+                </p>
+              </div>
+              {pastTotalPages > 1 ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/50">
+                    Сторінка {pastPage} з {pastTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => fetchPastEvents(pastPage - 1)}
+                    disabled={pastLoading || pastPage <= 1}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <ArrowRight className="h-3 w-3 rotate-180" />
+                    Назад
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fetchPastEvents(pastPage + 1)}
+                    disabled={pastLoading || pastPage >= pastTotalPages}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Далі
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {pastLoading ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="h-36 animate-pulse rounded-2xl border border-white/10 bg-white/5"
+                  />
+                ))}
+              </div>
+            ) : pastError ? (
+              <div className="rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-red-100">
+                {pastError}
+              </div>
+            ) : pastEvents.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {pastEvents.map((event) => renderEventCard(event, true))}
+              </div>
+            ) : (
+              <p className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white/70">
+                Архів поки порожній.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {selectedEvent && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="event-details-title"
+          className="fixed inset-0 z-3000 flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeModal();
+            }
+          }}
+        >
+          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#0b0c0f] p-10 shadow-2xl scrollbar-hide">
+            <button
+              type="button"
+              onClick={closeModal}
+              aria-label="Закрити вікно деталей події"
+              className="absolute right-4 top-4 rounded-full cursor-pointer border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/30 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+              {selectedEvent.city ? (
+                <span className="rounded-md bg-white/10 px-2 py-1">
+                  {selectedEvent.city}
+                </span>
+              ) : null}
+              <span className="rounded-md bg-white/10 px-2 py-1">
+                {formatShortDate(selectedEvent.startsAt, selectedEvent.timezone)}
+              </span>
+              {splitCategories(selectedEvent.category).map((cat) => (
+                <span
+                  key={cat}
+                  className="rounded-md border border-[#98ff22]/40 bg-[#98ff22]/10 px-2 py-1 text-[#98ff22]"
+                >
+                  {cat}
+                </span>
+              ))}
+              {!selectedEvent.isActive ? (
+                <span className="rounded-md border border-red-400/40 bg-red-400/10 px-2 py-1 text-red-200">
+                  Неактивна
+                </span>
+              ) : null}
+            </div>
+
+            <h3
+              id="event-details-title"
+              className="mt-3 text-2xl font-semibold"
+            >
+              {selectedEvent.title}
+            </h3>
+            {selectedEvent.description ? (
+              <p className="mt-2 text-white/70">{selectedEvent.description}</p>
+            ) : selectedEvent.summary ? (
+              <p className="mt-2 text-white/70">{selectedEvent.summary}</p>
+            ) : null}
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="flex items-start gap-3 rounded-2xl bg-white/5 p-3">
+                <Calendar className="mt-0.5 h-5 w-5 text-[#98ff22]" />
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium text-white">
+                    {formatDateWithTime(
+                      selectedEvent.startsAt,
+                      selectedEvent.timezone
+                    )}
+                  </p>
+                  {selectedEvent.endsAt && (
+                    <p className="text-white/70">
+                      Закінчення:{" "}
+                      {formatTime(selectedEvent.endsAt, selectedEvent.timezone)}
+                    </p>
+                  )}
+                  <p className="text-white/50">
+                    {selectedEvent.timezone.replace("_", " ")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-2xl bg-white/5 p-3">
+                <MapPin className="mt-0.5 h-5 w-5 text-[#98ff22]" />
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium text-white">
+                    {selectedEvent.venue || "Місце уточнюється"}
+                  </p>
+                  <p className="text-white/70">
+                    {selectedEvent.address || "Адреса буде пізніше"}
+                  </p>
+                  <p className="text-white/50">
+                    {[selectedEvent.city, selectedEvent.country]
+                      .filter(Boolean)
+                      .join(", ") || "Локація уточнюється"}
+                  </p>
+                </div>
+              </div>
+
+              {(selectedEvent.capacity || selectedEvent.spotsLeft) && (
+                <div className="flex items-start gap-3 rounded-2xl bg-white/5 p-3">
+                  <Users className="mt-0.5 h-5 w-5 text-[#98ff22]" />
+                  <div className="space-y-1 text-sm">
+                    {selectedEvent.capacity && (
+                      <p className="font-medium text-white">
+                        Місць: {selectedEvent.capacity}
+                      </p>
+                    )}
+                    {selectedEvent.spotsLeft !== undefined &&
+                      selectedEvent.spotsLeft !== null && (
+                        <p className="text-white/70">
+                          Вільно: {selectedEvent.spotsLeft}
+                        </p>
+                      )}
+                    {selectedEvent.host && (
+                      <p className="text-white/50">
+                        Організатор: {selectedEvent.host}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedEvent.tags.length > 0 && (
+                <div className="flex items-start gap-3 rounded-2xl bg-white/5 p-3">
+                  <Tag className="mt-0.5 h-5 w-5 text-[#98ff22]" />
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEvent.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+      <div className="mt-6 flex flex-col gap-3">
+              {!isFormOpen || isEventPast(selectedEvent) ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  {isEventPast(selectedEvent) ? (
+                    <span className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/70">
+                      Подія вже минула
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={openRsvp}
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-[#98ff22] bg-[#98ff22] px-4 py-2 text-sm font-semibold text-black transition hover:shadow-[0_0_30px_#98ff22]"
+                    >
+                      Записатися
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:border-white/30 hover:text-white"
+                  >
+                    Закрити
+                    <Clock className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <form
+                  className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 md:grid-cols-2 no-label-pointer"
+                  onSubmit={handleSubmit}
+                >
+                  {submitted && (
+                    <div className="md:col-span-2 rounded-xl border border-[#98ff22]/40 bg-[#98ff22]/10 px-3 py-2 text-sm text-[#d9ff9c]">
+                      {submissionMessage || "Запис отримано. Чекайте підтвердження на email."}
+                    </div>
+                  )}
+
+                  <div className="md:col-span-2 text-sm font-semibold text-white">
+                    Запис на подію
+                  </div>
+                  <label className="flex flex-col gap-1 text-sm text-white/80">
+                    Ім'я та прізвище
+                    <input
+                      name="name"
+                      required
+                      value={formState.name}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          name: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                      placeholder="Олексій Пшеничний"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-white/80">
+                    Email
+                    <input
+                      name="email"
+                      type="email"
+                      required
+                      value={formState.email}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          email: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                      placeholder="name@email.com"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-white/80 md:col-span-2">
+                Коментар / Telegram
+                <textarea
+                  name="comment"
+                  value={formState.comment}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      comment: event.target.value,
+                    }))
+                  }
+                      className="min-h-24 rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60 resize-none"
+                  placeholder="Напишіть, якщо плануєте прийти з другом або маєте особливі побажання."
+                />
+              </label>
+                  <input
+                    name="website"
+                    value={formState.honeypot}
+                    onChange={(event) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        honeypot: event.target.value,
+                      }))
+                    }
+                    className="hidden"
+                    tabIndex={-1}
+                    autoComplete="off"
+                  />
+
+                  {rsvpError && (
+                    <p className="md:col-span-2 text-sm text-red-400">
+                      {rsvpError}
+                    </p>
+                  )}
+                  <div className="md:col-span-2 flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-[#98ff22] bg-[#98ff22] px-4 py-2 text-sm font-semibold text-black transition hover:shadow-[0_0_30px_#98ff22] disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {submitting ? "Надсилаємо..." : "Підтвердити запис"}
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetForm();
+                        closeModal();
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:border-white/30 hover:text-white"
+                    >
+                      Скасувати
+                      <Clock className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adminModalOpen && isAdmin && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-3200 flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setAdminModalOpen(false);
+              setAdminEditing(null);
+            }
+          }}
+        >
+          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#0b0c0f] p-8 shadow-2xl scrollbar-hide">
+            <button
+              type="button"
+              onClick={() => {
+                setAdminModalOpen(false);
+                setAdminEditing(null);
+              }}
+              aria-label="Закрити форму"
+              className="sticky float-right right-0 top-0 rounded-full cursor-pointer border border-white/10 bg-white/5 p-2 text-white/70 transition hover:border-white/30 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="mb-4 flex items-center gap-2 text-[#98ff22]">
+              <ShieldCheck className="h-4 w-4" />
+              <span className="text-sm font-semibold">Адмін-панель подій</span>
+            </div>
+            <h3 className="text-xl font-bold tracking-tight text-white">
+              {adminEditing ? "Редагувати подію" : "Створити подію"}
+            </h3>
+            <p className="text-sm text-white/60">
+              Заповніть ключові поля: назва, дата початку, часовий пояс. Все
+              інше опційно.
+            </p>
+
+            <form
+              className="mt-4 grid gap-3 md:grid-cols-2 no-label-pointer"
+              onSubmit={handleAdminSubmit}
+            >
+              <label className="flex flex-col gap-1 text-sm text-white/80 md:col-span-2">
+                Назва
+                <input
+                  required
+                  value={adminForm.title}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, title: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Meet & Chill"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Початок
+                <div className="relative">
+                  <input
+                    ref={startRef}
+                    required
+                    type="datetime-local"
+                    value={adminForm.startsAt}
+                  onChange={(e) =>
+                    setAdminForm((p) => {
+                      const nextStart = e.target.value;
+                      const nextEnd =
+                        p.endsAt && new Date(p.endsAt) < new Date(nextStart)
+                          ? nextStart
+                          : p.endsAt;
+                      return { ...p, startsAt: nextStart, endsAt: nextEnd };
+                    })
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 pr-10 text-white outline-none transition focus:border-[#98ff22]/60"
+                />
+                  <button
+                    type="button"
+                    onClick={() => openPicker(startRef)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/5 bg-white/5 p-1 text-white/60 transition hover:border-white/20 hover:text-white"
+                    aria-label="Відкрити календар"
+                  >
+                    <Calendar className="h-4 w-4" />
+                  </button>
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Закінчення
+                <div className="relative">
+                  <input
+                    ref={endRef}
+                    type="datetime-local"
+                    value={adminForm.endsAt}
+                    onChange={(e) =>
+                      setAdminForm((p) => {
+                        const nextEnd = e.target.value;
+                        if (p.startsAt && nextEnd && new Date(nextEnd) < new Date(p.startsAt)) {
+                          return { ...p, endsAt: p.startsAt };
+                        }
+                        return { ...p, endsAt: nextEnd };
+                      })
+                    }
+                    min={adminForm.startsAt || undefined}
+                    className="w-full rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 pr-10 text-white outline-none transition focus:border-[#98ff22]/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => openPicker(endRef)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-white/5 bg-white/5 p-1 text-white/60 transition hover:border-white/20 hover:text-white"
+                    aria-label="Відкрити календар"
+                  >
+                    <Calendar className="h-4 w-4" />
+                  </button>
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Часовий пояс
+                <input
+                  value={adminForm.timezone}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, timezone: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Europe/Copenhagen"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Місто
+                <div className="relative" ref={cityDropdownRef}>
+                  <input
+                    value={cityQuery || adminForm.city}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCityQuery(next);
+                      setAdminForm((p) => ({ ...p, city: next }));
+                      setCityDropdownOpen(true);
+                    }}
+                    onBlur={() => setTimeout(() => setCityDropdownOpen(false), 120)}
+                    className="w-full rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                    placeholder="Копенгаген"
+                    autoComplete="off"
+                  />
+                  {cityDropdownOpen && (
+                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-white/10 bg-[#0b0c0f] shadow-xl scrollbar-hide">
+                      {CITY_OPTIONS.filter((c) => {
+                        const query = (cityQuery || "").trim().toLowerCase();
+                        return query ? c.toLowerCase().startsWith(query) : true;
+                      }).map((city) => (
+                        <button
+                          key={city}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setAdminForm((p) => ({ ...p, city }));
+                            setCityQuery(city);
+                            setCityDropdownOpen(false);
+                          }}
+                          className="w-full px-3 py-2 text-left text-white/80 hover:bg-white/5 cursor-pointer"
+                        >
+                          {city}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Країна
+                <input
+                  value={adminForm.country}
+                  readOnly
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Данія"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Локація / venue
+                <input
+                  value={adminForm.venue}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, venue: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Vidlik space"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Адреса
+                <input
+                  value={adminForm.address}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, address: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Kultorvet 11, Kobenhavn"
+                />
+              </label>
+                            <label className="flex flex-col gap-1 text-sm text-white/80">
+                Категорія
+                <div className="relative" ref={categoryDropdownRef}>
+                  <div
+                    className="flex min-h-12 flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 cursor-text"
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest("[data-remove-chip]")) return;
+                      setCategoryDropdownOpen(true);
+                    }}
+                  >
+                    {categoriesSelected.length === 0 ? (
+                      <span className="text-white/40 text-sm">Оберіть категорії</span>
+                    ) : (
+                      categoriesSelected.map((cat) => (
+                        <span
+                          key={cat}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#98ff22]/60 bg-[#98ff22]/10 px-3 py-1 text-xs text-white"
+                        >
+                          <span>{cat}</span>
+                          <button
+                            type="button"
+                            data-remove-chip
+                            className="rounded-full px-1 text-white/70 hover:text-white"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={() =>
+                              setCategoriesSelected((prev) =>
+                                prev.includes(cat)
+                                  ? prev.filter((c) => c !== cat)
+                                  : prev
+                              )
+                            }
+                            aria-label={`Видалити категорію ${cat}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    )}
+                    <button
+                      type="button"
+                      className="ml-auto text-xs text-white/60 hover:text-white"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setCategoryDropdownOpen((v) => !v);
+                      }}
+                    >
+                      Обрати
+                    </button>
+                  </div>
+                  {categoryDropdownOpen && (
+                    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-white/10 bg-[#0b0c0f] shadow-xl scrollbar-hide">
+                      {CATEGORY_OPTIONS.map((cat) => {
+                        const active = categoriesSelected.includes(cat);
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            className={`w-full px-3 py-2 text-left text-sm ${
+                              active
+                                ? "bg-[#98ff22]/10 text-white"
+                                : "text-white/80 hover:bg-white/5"
+                            }`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCategoriesSelected((prev) =>
+                                prev.includes(cat)
+                                  ? prev.filter((c) => c !== cat)
+                                  : [...prev, cat]
+                              );
+                            }}
+                          >
+                            {cat}
+                            {active ? " ✓" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80 md:col-span-2">
+                Короткий опис
+                <input
+                  value={adminForm.summary}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, summary: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Легка зустріч, ігри, музика."
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80 md:col-span-2">
+                Детальний опис
+                <textarea
+                  value={adminForm.description}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, description: e.target.value }))
+                  }
+                  className="min-h-24 rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60 resize-none"
+                  placeholder="Що буде на івенті, програма, фокус."
+                />
+              </label>
+                            <label className="flex flex-col gap-1 text-sm text-white/80 md:col-span-2">
+                Теги (через кому)
+                <div className="relative" ref={tagDropdownRef}>
+                  <div
+                    className="flex min-h-12 flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 cursor-text"
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest("[data-remove-chip]")) return;
+                      setTagDropdownOpen(true);
+                    }}
+                  >
+                    {tagsSelected.length === 0 ? (
+                      <span className="text-white/40 text-sm">Оберіть теги</span>
+                    ) : (
+                      tagsSelected.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#98ff22]/60 bg-[#98ff22]/10 px-3 py-1 text-xs text-white"
+                        >
+                          <span>{tag}</span>
+                          <button
+                            type="button"
+                            data-remove-chip
+                            className="rounded-full px-1 text-white/70 hover:text-white"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={() =>
+                              setTagsSelected((prev) =>
+                                prev.includes(tag)
+                                  ? prev.filter((t) => t !== tag)
+                                  : prev
+                              )
+                            }
+                            aria-label={`Видалити тег ${tag}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    )}
+                    <button
+                      type="button"
+                      className="ml-auto text-xs text-white/60 hover:text-white"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setTagDropdownOpen((v) => !v);
+                      }}
+                    >
+                      Обрати
+                    </button>
+                  </div>
+                  {tagDropdownOpen && (
+                    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-white/10 bg-[#0b0c0f] shadow-xl scrollbar-hide">
+                      {TAG_OPTIONS.map((tag) => {
+                        const active = tagsSelected.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            className={`w-full px-3 py-2 text-left text-sm ${
+                              active
+                                ? "bg-[#98ff22]/10 text-white"
+                                : "text-white/80 hover:bg-white/5"
+                            }`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setTagsSelected((prev) =>
+                                prev.includes(tag)
+                                  ? prev.filter((t) => t !== tag)
+                                  : [...prev, tag]
+                              );
+                            }}
+                          >
+                            {tag}
+                            {active ? " ✓" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Місць
+                <input
+                  type="number"
+                  min={0}
+                  value={adminForm.capacity}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, capacity: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="35"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Вільно
+                <input
+                  type="number"
+                  min={0}
+                  value={adminForm.spotsLeft}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, spotsLeft: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="12"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Організатор
+                <input
+                  value={adminForm.host}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, host: e.target.value }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="Команда Vidlik"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-white/80">
+                Посилання на реєстрацію
+                <input
+                  value={adminForm.registrationUrl}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({
+                      ...p,
+                      registrationUrl: e.target.value,
+                    }))
+                  }
+                  className="rounded-xl border border-white/10 bg-[#0b0c0f] px-3 py-2 text-white outline-none transition focus:border-[#98ff22]/60"
+                  placeholder="https://..."
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={adminForm.isActive}
+                  onChange={(e) =>
+                    setAdminForm((p) => ({ ...p, isActive: e.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-white/30 bg-transparent"
+                />
+                Активна подія
+              </label>
+
+              {adminError && (
+                <div className="md:col-span-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-100">
+                  {adminError}
+                </div>
+              )}
+
+              <div className="md:col-span-2 flex flex-wrap gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={adminSaving}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-[#98ff22] bg-[#98ff22] px-5 py-2.5 text-sm font-semibold text-black transition hover:shadow-[0_0_30px_#98ff22] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {adminSaving
+                    ? "Зберігаємо..."
+                    : adminEditing
+                    ? "Оновити подію"
+                    : "Створити подію"}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminModalOpen(false);
+                    setAdminEditing(null);
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm text-white/80 transition hover:border-white/30 hover:text-white"
+                >
+                  Скасувати
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </RevealSection>
+  );
+}
+
+
+
+
+
+
+
