@@ -103,6 +103,26 @@ const parseEventPayload = (
     return { error: "Закінчення не може бути раніше початку." };
   }
 
+  const capacity = numberField("capacity");
+  const spotsLeft = numberField("spotsLeft");
+
+  if (capacity !== null && (!Number.isInteger(capacity) || capacity < 0)) {
+    return { error: "Кількість місць має бути цілим невідʼємним числом." };
+  }
+
+  if (spotsLeft !== null && (!Number.isInteger(spotsLeft) || spotsLeft < 0)) {
+    return {
+      error: "Кількість вільних місць має бути цілим невідʼємним числом.",
+    };
+  }
+
+  if (capacity !== null && spotsLeft !== null && spotsLeft > capacity) {
+    return {
+      error:
+        "Вільних місць не може бути більше, ніж загальна кількість місць.",
+    };
+  }
+
   return {
     data: {
       title,
@@ -117,8 +137,8 @@ const parseEventPayload = (
       summary: field("summary", 240),
       description: field("description", 4000),
       tags,
-      capacity: numberField("capacity"),
-      spotsLeft: numberField("spotsLeft"),
+      capacity,
+      spotsLeft,
       host: field("host", 120),
       registrationUrl: field("registrationUrl", 400),
       latitude:

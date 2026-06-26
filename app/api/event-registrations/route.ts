@@ -180,7 +180,7 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-    } catch (err) {
+    } catch {
       return NextResponse.json(
         { error: "Не вдалося перевірити домен email. Спробуйте ще раз." },
         { status: 400 }
@@ -192,7 +192,14 @@ export async function POST(req: Request) {
 
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      select: { id: true, title: true, startsAt: true, endsAt: true, isActive: true },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+        isActive: true,
+        spotsLeft: true,
+      },
     });
 
     if (!event || !event.isActive) {
@@ -206,6 +213,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Подія вже завершилася." },
         { status: 400 }
+      );
+    }
+
+    if (event.spotsLeft !== null && event.spotsLeft <= 0) {
+      return NextResponse.json(
+        { error: "На цю подію вже немає вільних місць." },
+        { status: 409 }
       );
     }
 
@@ -232,21 +246,42 @@ export async function POST(req: Request) {
     }
 
     if (shouldAutoConfirm) {
-      await prisma.eventRegistrationRequest.deleteMany({
-        where: { eventId, email: registrationEmail },
+      const created = await prisma.$transaction(async (tx) => {
+        const reserved =
+          event.spotsLeft === null
+            ? { count: 1 }
+            : await tx.event.updateMany({
+                where: { id: eventId, spotsLeft: { gt: 0 } },
+                data: { spotsLeft: { decrement: 1 } },
+              });
+
+        if (reserved.count === 0) return false;
+
+        await tx.eventRegistrationRequest.deleteMany({
+          where: { eventId, email: registrationEmail },
+        });
+
+        await tx.eventRegistration.create({
+          data: {
+            eventId,
+            userId: session?.id ?? null,
+            name: registrationName,
+            email: registrationEmail,
+            contact,
+            status: "CONFIRMED",
+            confirmedAt: new Date(),
+          },
+        });
+
+        return true;
       });
 
-      await prisma.eventRegistration.create({
-        data: {
-          eventId,
-          userId: session?.id ?? null,
-          name: registrationName,
-          email: registrationEmail,
-          contact,
-          status: "CONFIRMED",
-          confirmedAt: new Date(),
-        },
-      });
+      if (!created) {
+        return NextResponse.json(
+          { error: "На цю подію вже немає вільних місць." },
+          { status: 409 }
+        );
+      }
 
       return NextResponse.json({
         status: "CONFIRMED",

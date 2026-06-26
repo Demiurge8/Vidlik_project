@@ -1,19 +1,21 @@
 "use client";
 
-import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
-import type { FC } from "react";
 import { Fragment } from "react";
+import type { ComponentType } from "react";
+import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
 import { MapPin, X } from "lucide-react";
 
-const LeafletMap: FC<any> = MapContainer as any;
-const LeafletTileLayer: FC<any> = TileLayer as any;
-const LeafletCircleMarker: FC<any> = CircleMarker as any;
-const LeafletTooltip: FC<any> = Tooltip as any;
+type LeafletComponent = ComponentType<Record<string, unknown>>;
+
+const LeafletMap = MapContainer as unknown as LeafletComponent;
+const LeafletTileLayer = TileLayer as unknown as LeafletComponent;
+const LeafletCircleMarker = CircleMarker as unknown as LeafletComponent;
+const LeafletTooltip = Tooltip as unknown as LeafletComponent;
 
 export type CityEvent = {
   id: string;
-  date: string; // наприклад "24.11"
-  title: string; // наприклад "Meet&Chill #3"
+  date: string;
+  title: string;
 };
 
 export type City = {
@@ -36,14 +38,19 @@ const DENMARK_BOUNDS: [[number, number], [number, number]] = [
   [58.5, 14.0],
 ];
 
+const EMPTY_CITY: City = {
+  id: "empty",
+  name: "",
+  lat: 0,
+  lon: 0,
+  eventsCount: 0,
+};
+
 export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
+  const markers = cities.length > 0 ? cities : [EMPTY_CITY];
+
   return (
-    <div
-      className="
-        relative w-full overflow-hidden rounded-2xl bg-transparent
-        aspect-[4/3] md:aspect-[4/3] lg:aspect-square
-      "
-    >
+    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-transparent md:aspect-[4/3] lg:aspect-square">
       <LeafletMap
         center={[56.0, 10.5]}
         zoom={6}
@@ -62,7 +69,7 @@ export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
           className="map-brightness"
         />
 
-        {(cities.length > 0 ? cities : [{ id: "empty", name: "", lat: 0, lon: 0, eventsCount: 0 }]).map((city) => {
+        {markers.map((city) => {
           const isActive = activeId != null && city.id === activeId;
 
           return (
@@ -77,7 +84,7 @@ export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
                     fillColor: "rgba(152,255,34,0.12)",
                     fillOpacity: 0.8,
                   }}
-                  interactive={false as any}
+                  interactive={false}
                 />
               )}
 
@@ -100,27 +107,16 @@ export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
                     offset={[0, -11]}
                     opacity={1}
                     permanent={true}
-                    interactive={true as any}
-                    className="
-                      !rounded-2xl !border !border-[#98ff22]/70
-                      !bg-black/90 !px-4 !py-3
-                      !text-xs !text-white
-                      shadow-[0_0_24px_rgba(152,255,34,0.6)]
-                    "
+                    interactive={true}
+                    className="!rounded-2xl !border !border-[#98ff22]/70 !bg-black/90 !px-4 !py-3 !text-xs !text-white shadow-[0_0_24px_rgba(152,255,34,0.6)]"
                   >
                     <div className="relative flex flex-col gap-2">
                       <button
                         type="button"
-                        className="
-                          absolute right-0 top-0
-                          rounded-full p-1
-                          text-white/40 hover:text-white/80
-                          hover:bg-white/10 transition
-                          cursor-pointer
-                        "
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
+                        className="absolute right-0 top-0 cursor-pointer rounded-full p-1 text-white/40 transition hover:bg-white/10 hover:text-white/80"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
                           onChange(null);
                         }}
                       >
@@ -141,23 +137,18 @@ export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
                       </div>
 
                       {city.events && city.events.length > 0 && (
-                        <div className="mt-1 space-y-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-hide">
-                          {city.events.map((evt) => (
+                        <div className="scrollbar-hide mt-1 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                          {city.events.map((event) => (
                             <div
-                              key={evt.id}
+                              key={event.id}
                               className="flex items-center gap-2 text-[0.72rem]"
                             >
-                              <span
-                                className="
-                                  inline-flex items-center justify-center
-                                  rounded-full border border-[#98ff22]/70
-                                  bg-[#98ff22]/10 px-2 py-0.5
-                                  font-semibold text-[#98ff22]
-                                "
-                              >
-                                {evt.date}
+                              <span className="inline-flex items-center justify-center rounded-full border border-[#98ff22]/70 bg-[#98ff22]/10 px-2 py-0.5 font-semibold text-[#98ff22]">
+                                {event.date}
                               </span>
-                              <span className="text-white/85">{evt.title}</span>
+                              <span className="text-white/85">
+                                {event.title}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -178,15 +169,8 @@ export function DenmarkEventsMapInner({ cities, activeId, onChange }: Props) {
         })}
       </LeafletMap>
 
-      <div
-        className="
-        pointer-events-none 
-        absolute left-4 top-4 rounded-full z-[1000]
-        flex items-center gap-2
-        border border-white/10 bg-black/70 px-3 py-1 
-        text-xs text-white/60 backdrop-blur"
-      >
-        <MapPin className="w-3.5 h-3.5 text-[#98ff22]" />
+      <div className="pointer-events-none absolute left-4 top-4 z-[1000] flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3 py-1 text-xs text-white/60 backdrop-blur">
+        <MapPin className="h-3.5 w-3.5 text-[#98ff22]" />
         <span className="leading-none">Данія • карта подій Vidlik</span>
       </div>
     </div>

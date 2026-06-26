@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,60 +7,57 @@ datasource db {
 }
 
 model User {
-  id            Int      @id @default(autoincrement())
-  telegramId    String?  @unique
-  email         String   @unique
-  name          String?
-  role          Role     @default(USER) // "user" | "admin" (логічно через enum потім)
-  pointsBalance Int      @default(0)
-  passwordHash  String
-  emailVerifiedAt                DateTime? @default(now())
-  emailVerificationTokenHash     String?   @unique
-  emailVerificationTokenExpiresAt DateTime?
-  createdAt     DateTime @default(now())
-
-  tasks                 UserTask[]
-  transactions          PointsTransaction[]
-  registrations         EventRegistration[]
-  registrationRequests  EventRegistrationRequest[]
+  id                              Int                        @id @default(autoincrement())
+  telegramId                      String?                    @unique
+  email                           String                     @unique
+  name                            String?
+  pointsBalance                   Int                        @default(0)
+  createdAt                       DateTime                   @default(now())
+  passwordHash                    String
+  role                            Role                       @default(USER)
+  emailVerifiedAt                 DateTime?                  @default(now()) @db.Timestamptz(6)
+  emailVerificationTokenHash      String?                    @unique
+  emailVerificationTokenExpiresAt DateTime?                  @db.Timestamptz(6)
+  registrations                   EventRegistration[]
+  registrationRequests            EventRegistrationRequest[]
+  transactions                    PointsTransaction[]
+  tasks                           UserTask[]
 }
 
 model Task {
-  id          Int     @id @default(autoincrement())
-  title       String
-  description String?
-  points      Int
-  type        String // наприклад: "telegram", "site", "offline"
-  isActive    Boolean @default(true)
-
+  id                 Int                 @id @default(autoincrement())
+  title              String
+  description        String?
+  points             Int
+  type               String
+  isActive           Boolean             @default(true)
   PointsTransactions PointsTransaction[]
   userTasks          UserTask[]
 }
 
 model Event {
-  id              Int       @id @default(autoincrement())
-  title           String
-  startsAt        DateTime
-  endsAt          DateTime?
-  latitude        Float?
-  longitude       Float?
-  city            String?
-  country         String?
-  venue           String?
-  address         String?
-  timezone        String    @default("UTC")
-  category        String?
-  summary         String?
-  description     String?
-  tags            String[]  @default([])
-  capacity        Int?
-  spotsLeft       Int?
-  host            String?
-  registrationUrl String?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
+  id                   Int                        @id @default(autoincrement())
+  title                String
+  startsAt             DateTime
+  description          String?
+  isActive             Boolean                    @default(true)
+  address              String?
+  capacity             Int?
+  category             String?
+  city                 String?
+  country              String?
+  createdAt            DateTime                   @default(now())
+  endsAt               DateTime?
+  host                 String?
+  registrationUrl      String?
+  spotsLeft            Int?
+  summary              String?
+  tags                 String[]                   @default([])
+  timezone             String                     @default("UTC")
+  updatedAt            DateTime                   @updatedAt
+  venue                String?
+  latitude             Float?
+  longitude            Float?
   registrations        EventRegistration[]
   registrationRequests EventRegistrationRequest[]
   transactions         PointsTransaction[]
@@ -74,64 +65,66 @@ model Event {
 
 model UserTask {
   id            Int      @id @default(autoincrement())
-  user          User     @relation(fields: [userId], references: [id])
   userId        Int
-  task          Task     @relation(fields: [taskId], references: [id])
   taskId        Int
   completedAt   DateTime @default(now())
   pointsAwarded Int
+  task          Task     @relation(fields: [taskId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
 
-  @@unique([userId, taskId]) // одне завдання один раз для юзера
+  @@unique([userId, taskId])
 }
 
 model PointsTransaction {
   id        Int      @id @default(autoincrement())
-  user      User     @relation(fields: [userId], references: [id])
   userId    Int
-  task      Task?    @relation(fields: [taskId], references: [id])
   taskId    Int?
-  event     Event?   @relation(fields: [eventId], references: [id])
   eventId   Int?
   points    Int
   reason    String?
   createdAt DateTime @default(now())
+  event     Event?   @relation(fields: [eventId], references: [id])
+  task      Task?    @relation(fields: [taskId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model EventRegistration {
   id             Int                     @id @default(autoincrement())
-  event          Event                   @relation(fields: [eventId], references: [id])
   eventId        Int
-  user           User?                   @relation(fields: [userId], references: [id])
   userId         Int?
   name           String?
   email          String
+  createdAt      DateTime                @default(now())
   contact        String?
   status         EventRegistrationStatus @default(PENDING)
   tokenHash      String?
-  tokenExpiresAt DateTime?
-  confirmedAt    DateTime?
-  createdAt      DateTime                @default(now())
+  tokenExpiresAt DateTime?               @db.Timestamp(6)
+  confirmedAt    DateTime?               @db.Timestamp(6)
+  event          Event                   @relation(fields: [eventId], references: [id])
+  user           User?                   @relation(fields: [userId], references: [id])
 
-  @@unique([eventId, email])
-  @@index([tokenHash])
+  @@unique([eventId, email], map: "eventregistration_eventid_email_key")
+  @@index([tokenHash], map: "eventregistration_tokenhash_idx")
 }
 
 model EventRegistrationRequest {
   id             Int      @id @default(autoincrement())
-  event          Event    @relation(fields: [eventId], references: [id])
   eventId        Int
-  user           User?    @relation(fields: [userId], references: [id])
   userId         Int?
   name           String?
   email          String
   contact        String?
   tokenHash      String
-  tokenExpiresAt DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  tokenExpiresAt DateTime @db.Timestamp(6)
+  createdAt      DateTime @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           User?    @relation(fields: [userId], references: [id], onUpdate: NoAction)
 
   @@unique([eventId, email])
+  @@unique([eventId, email], map: "eventregistrationrequest_eventid_email_key")
   @@index([tokenHash])
+  @@index([tokenHash], map: "eventregistrationrequest_tokenhash_idx")
 }
 
 enum Role {
@@ -143,4 +136,3 @@ enum EventRegistrationStatus {
   PENDING
   CONFIRMED
 }
-

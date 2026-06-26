@@ -244,7 +244,7 @@ export function Events() {
           cache: "no-store",
         });
         if (!response.ok) {
-          throw new Error("?? ??????? ??????????? ????? ?????");
+          throw new Error("Не вдалося завантажити архів подій");
         }
         const data = (await response.json()) as {
           events: EventItem[];
@@ -262,7 +262,7 @@ export function Events() {
         setPastError(
           err instanceof Error
             ? err.message
-            : "??????? ??????? ???????????? ??????"
+            : "Сталася помилка завантаження архіву"
         );
       } finally {
         setPastLoading(false);
@@ -280,7 +280,7 @@ export function Events() {
         cache: "no-store",
       });
       if (!response.ok) {
-        throw new Error("?? ??????? ??????????? ?????");
+        throw new Error("Не вдалося завантажити події");
       }
       const data = (await response.json()) as { events: EventItem[] };
       setEvents(
@@ -291,7 +291,7 @@ export function Events() {
       );
     } catch (err) {
       setListError(
-        err instanceof Error ? err.message : "??????? ??????? ???????????? ?????"
+        err instanceof Error ? err.message : "Сталася помилка завантаження подій"
       );
     } finally {
       setLoading(false);
@@ -342,19 +342,19 @@ export function Events() {
     };
   }, []);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setIsFormOpen(false);
     setFormState(emptyFormState());
     setSubmitting(false);
     setSubmitted(false);
     setSubmissionMessage(null);
     setRsvpError(null);
-  };
+  }, []);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     resetForm();
     setSelectedEvent(null);
-  };
+  }, [resetForm]);
 
   useEffect(() => {
     if (!selectedEvent) return;
@@ -368,7 +368,7 @@ export function Events() {
       document.body.style.overflow = originalOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [selectedEvent]);
+  }, [closeModal, selectedEvent]);
 
   useEffect(() => {
     if (!archiveOpen) return;
@@ -486,7 +486,7 @@ export function Events() {
       setTimeout(() => {
         closeModal();
       }, 1400);
-    } catch (err) {
+    } catch {
       setRsvpError("Не вдалося надіслати форму. Спробуйте ще раз.");
     } finally {
       setSubmitting(false);
@@ -1061,7 +1061,7 @@ export function Events() {
                     Запис на подію
                   </div>
                   <label className="flex flex-col gap-1 text-sm text-white/80">
-                    Ім'я та прізвище
+                    Імʼя та прізвище
                     <input
                       name="name"
                       required

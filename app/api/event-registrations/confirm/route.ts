@@ -68,6 +68,14 @@ export async function GET(req: Request) {
       email: true,
       contact: true,
       tokenExpiresAt: true,
+      event: {
+        select: {
+          startsAt: true,
+          endsAt: true,
+          isActive: true,
+          spotsLeft: true,
+        },
+      },
     },
   });
 
@@ -92,6 +100,26 @@ export async function GET(req: Request) {
     });
   }
 
+  const eventEnd = new Date(
+    registration.event.endsAt ?? registration.event.startsAt
+  ).getTime();
+
+  if (!registration.event.isActive || eventEnd < Date.now()) {
+    return renderHtml({
+      ok: false,
+      title: "Подія недоступна",
+      message: "Ця подія вже недоступна для реєстрації.",
+    });
+  }
+
+  if (registration.event.spotsLeft !== null && registration.event.spotsLeft <= 0) {
+    return renderHtml({
+      ok: false,
+      title: "Місця закінчилися",
+      message: "На цю подію вже немає вільних місць.",
+    });
+  }
+
   const existing = await prisma.eventRegistration.findUnique({
     where: {
       eventId_email: { eventId: registration.eventId, email: registration.email },
@@ -109,8 +137,18 @@ export async function GET(req: Request) {
     });
   }
 
-  await prisma.$transaction([
-    prisma.eventRegistration.create({
+  const created = await prisma.$transaction(async (tx) => {
+    const reserved =
+      registration.event.spotsLeft === null
+        ? { count: 1 }
+        : await tx.event.updateMany({
+            where: { id: registration.eventId, spotsLeft: { gt: 0 } },
+            data: { spotsLeft: { decrement: 1 } },
+          });
+
+    if (reserved.count === 0) return false;
+
+    await tx.eventRegistration.create({
       data: {
         eventId: registration.eventId,
         userId: registration.userId,
@@ -120,11 +158,22 @@ export async function GET(req: Request) {
         status: "CONFIRMED",
         confirmedAt: new Date(),
       },
-    }),
-    prisma.eventRegistrationRequest.delete({
+    });
+
+    await tx.eventRegistrationRequest.delete({
       where: { id: registration.id },
-    }),
-  ]);
+    });
+
+    return true;
+  });
+
+  if (!created) {
+    return renderHtml({
+      ok: false,
+      title: "Місця закінчилися",
+      message: "На цю подію вже немає вільних місць.",
+    });
+  }
 
   return renderHtml({
     ok: true,

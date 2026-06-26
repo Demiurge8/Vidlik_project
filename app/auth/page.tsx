@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Lock, Mail, ShieldCheck, User, X } from "lucide-react";
 import { logout, useSession } from "../lib/session";
@@ -31,11 +31,15 @@ const isEmail = (value: string) => {
 
 const isAsciiPassword = (value: string) => PASSWORD_ASCII_REGEX.test(value);
 
-export default function AuthPage() {
+const getSafeRedirect = (value: string | null) => {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+};
+
+function AuthPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/";
-
+  const redirectTo = getSafeRedirect(searchParams.get("redirect"));
   const { session, setSession } = useSession();
 
   const [mode, setMode] = useState<AuthMode>("login");
@@ -54,7 +58,7 @@ export default function AuthPage() {
     }
   }, [session]);
 
-  const goHome = () => router.push(redirectTo || "/");
+  const goHome = () => router.push(redirectTo);
 
   const heading = useMemo(
     () => (mode === "login" ? "Вхід до акаунту" : "Створити акаунт"),
@@ -97,7 +101,7 @@ export default function AuthPage() {
       const trimmedName = name.trim();
       const trimmedConfirmPassword = confirmPassword.trim();
       if (!trimmedName) {
-        setError("Вкажіть ім'я.");
+        setError("Вкажіть імʼя.");
         return;
       }
       if (
@@ -129,7 +133,6 @@ export default function AuthPage() {
         user?: unknown;
         error?: string;
         requiresVerification?: boolean;
-        devVerificationToken?: string;
       };
 
       if (!response.ok || !data.ok) {
@@ -179,7 +182,7 @@ export default function AuthPage() {
               <span className="inline-flex items-center gap-2 rounded-full border border-[#98ff22]/40 bg-[#98ff22]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#98ff22]">
                 <ShieldCheck className="h-4 w-4" /> Доступ
               </span>
-              <p className="max-w-2xl text-base md:text-lg font-semibold text-white/80">
+              <p className="max-w-2xl text-base font-semibold text-white/80 md:text-lg">
                 Увійдіть або створіть акаунт, щоб бачити свій баланс балів та
                 реєструватися на події Vidlik.
               </p>
@@ -252,14 +255,16 @@ export default function AuthPage() {
               >
                 {mode === "register" && (
                   <label className="block space-y-2">
-                    <span className="text-sm text-white/70">Ім'я та прізвище</span>
+                    <span className="text-sm text-white/70">
+                      Імʼя та прізвище
+                    </span>
                     <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0b0c0f] px-3 py-2 focus-within:border-[#98ff22]/60">
                       <User className="h-4 w-4 text-white/50" />
                       <input
                         required
                         value={name}
                         onChange={(event) => setName(event.target.value)}
-                        placeholder="Ваше ім'я"
+                        placeholder="Ваше імʼя"
                         className="w-full bg-transparent text-white outline-none placeholder:text-white/30"
                         autoComplete="off"
                       />
@@ -310,7 +315,9 @@ export default function AuthPage() {
                         required
                         type="password"
                         value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        onChange={(event) =>
+                          setConfirmPassword(event.target.value)
+                        }
                         placeholder="Введіть пароль ще раз"
                         className="w-full bg-transparent text-white outline-none placeholder:text-white/30"
                         autoComplete="new-password"
@@ -353,5 +360,13 @@ export default function AuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthPageContent />
+    </Suspense>
   );
 }

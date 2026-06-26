@@ -100,8 +100,18 @@ export function useSession() {
   }, [setSession]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+
+    fetchSession().then((user) => {
+      if (cancelled) return;
+      setSession(user);
+      setHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setSession]);
 
   return { session, hydrated, setSession, refresh };
 }

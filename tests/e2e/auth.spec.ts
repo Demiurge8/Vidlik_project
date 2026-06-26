@@ -7,11 +7,9 @@ test.describe("Auth flow", () => {
   test("login redirects to home and shows user state, logout restores CTA", async ({
     page,
   }) => {
-    // чистий стан
     await page.goto("about:blank");
     await page.evaluate(() => localStorage.clear());
 
-    // вхід
     await page.goto("/auth");
     await page.getByRole("button", { name: "Вхід" }).click();
     await page.getByLabel("Email").fill(DEMO_EMAIL);
@@ -22,7 +20,6 @@ test.describe("Auth flow", () => {
 
     await expect(page.getByText("Demo Vidlik")).toBeVisible();
 
-    // вихід
     await page.getByRole("button", { name: "Вийти" }).click();
 
     await expect(
