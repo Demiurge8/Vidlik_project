@@ -178,30 +178,41 @@ If `RESEND_API_KEY` is not configured, the verification link is printed to the s
 
 Never commit `.env` and never publish real database passwords.
 
-## Local Development
+### Installation
 
-Install dependencies.
+**1. Clone the repository**
+```bash
+git clone https://github.com/Demiurge8/Vidlik_project.git
+cd Vidlik_project
+```
 
+**2. Install dependencies**
 ```bash
 npm install
 ```
 
-Generate Prisma Client.
+**3. Set up environment variables**
+```bash
+cp .env.example .env
+# Fill in your database, auth, and email credentials in .env
+```
 
+**4. Set up the database**
 ```bash
 npx prisma generate
+npx prisma migrate deploy
 ```
 
-Start the development server.
-
+**5. Start the development server**
 ```bash
 npm run dev
+# App runs on http://localhost:3000
 ```
 
-Open the application.
-
-```text
-http://localhost:3000
+**6. Run production build**
+```bash
+npm run build
+npm run start
 ```
 
 Authentication:
@@ -225,3 +236,9 @@ Event registrations:
 2. `GET /api/event-registrations/confirm?token=...`
 
 Admin only event routes require an authenticated user with the `ADMIN` role.
+
+## Author
+
+**Oleksandr Kravchenko**
+- GitHub: [@Demiurge8](https://github.com/Demiurge8)
+- LinkedIn: [linkedin-url](https://www.linkedin.com/in/oleksandr-kravchenko-dem/)
