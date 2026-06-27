@@ -4,6 +4,9 @@ Vidlik Web is the official web application for the Vidlik community project. The
 
 The project is built as a full stack Next.js application with PostgreSQL data storage, Prisma ORM, custom authentication, event management, event registration, and an interactive map experience.
 
+## Screenshot
+![Vidlik Web Screenshot](./screenshot.png)
+
 ## Project Overview
 
 Vidlik Web provides a public community website and a backend API for managing the core data of the platform.
@@ -19,9 +22,6 @@ Main goals:
 7. Track event capacity and available seats.
 8. Provide admin protected event management.
 9. Keep the application ready for deployment on modern hosting platforms.
-
-## Screenshot
-![Vidlik Web Screenshot](./screenshot.png)
 
 ## Application Modules
 
